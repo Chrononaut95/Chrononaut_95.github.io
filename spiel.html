@@ -16,10 +16,20 @@
 <script type="module">
   import * as THREE from 'three';
 
-  const DATEI = 'images/objekt_';  // Dateiname vor der Nummer, z. B. images/objekt_0.png
+  const DATEI = 'images/object_';  // Dateiname vor der Nummer, z. B. images/object_0.png
   const ANZAHL = 4;      // 0 = vorne, 1 = rechts, 2 = hinten, 3 = links
   const RASTER = 4;      // Pixelgröße: höher = gröberer Retro-Look
   const RAUM = 10;       // halbe Raumbreite
+  const HOEHE = 2;                   // Höhe des Objekts im Raum
+  const BREITE = HOEHE * 224 / 320;  // Breite passend zum Bildformat (224 x 320 px)
+
+  // Roter Balken oben, falls ein Bild nicht geladen werden kann
+  function meldung(text) {
+    const d = document.createElement('div');
+    d.style.cssText = 'position:fixed;top:0;left:0;right:0;background:#c00;color:#fff;font:14px sans-serif;padding:6px;z-index:9';
+    d.textContent = text;
+    document.body.appendChild(d);
+  }
 
   // Renderer mit niedriger Auflösung, per CSS hochskaliert
   const renderer = new THREE.WebGLRenderer({ antialias: false });
@@ -52,16 +62,18 @@
   const loader = new THREE.TextureLoader();
   const bilder = [];
   for (let i = 0; i < ANZAHL; i++) {
-    const t = loader.load(`${DATEI}${i}.png`);
+    const t = loader.load(`${DATEI}${i}.png`, undefined, undefined,
+      () => meldung('Bild fehlt: ' + DATEI + i + '.png'));
     t.magFilter = THREE.NearestFilter;
     t.colorSpace = THREE.SRGBColorSpace;
     bilder.push(t);
   }
   const objekt = new THREE.Mesh(
-    new THREE.PlaneGeometry(2, 2),
+    new THREE.PlaneGeometry(1, 1),
     new THREE.MeshBasicMaterial({ map: bilder[0], transparent: true, alphaTest: 0.5, side: THREE.DoubleSide })
   );
-  objekt.position.set(0, 1, 0);
+  objekt.scale.set(BREITE, HOEHE, 1);
+  objekt.position.set(0, HOEHE / 2, 0);
   scene.add(objekt);
 
   // Steuerung: Pfeiltasten/WASD oder Wischen (links/rechts = drehen, hoch/runter = gehen)
