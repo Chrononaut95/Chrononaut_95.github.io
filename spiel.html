@@ -5,14 +5,19 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
   <title>Raum</title>
   <style>
-    html, body { margin: 0; height: 100%; background: #222; overflow: hidden; touch-action: none; }
+    html, body { margin: 0; height: 100%; background: #222; overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none; }
     canvas { width: 100%; height: 100%; display: block; }
+    #stickBasis, #stickKnopf { position: fixed; border-radius: 50%; display: none; pointer-events: none; z-index: 5; }
+    #stickBasis { width: 110px; height: 110px; margin: -55px 0 0 -55px; border: 2px solid rgba(255,255,255,.45); background: rgba(255,255,255,.08); }
+    #stickKnopf { width: 48px; height: 48px; margin: -24px 0 0 -24px; background: rgba(255,255,255,.5); }
   </style>
   <script type="importmap">
     { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }
   </script>
 </head>
 <body>
+<div id="stickBasis"></div>
+<div id="stickKnopf"></div>
 <script type="module">
   import * as THREE from 'three';
 
@@ -21,6 +26,10 @@
   const RAUM = 10;       // halbe Raumbreite
   const HOEHE = 2;                   // Höhe des Objekts im Raum
   const BREITE = HOEHE * 448 / 640;  // Breite passend zum Bildformat (448 x 640 px)
+  const TEMPO = 4;       // Laufgeschwindigkeit
+  const DREHTEMPO = 2;   // Drehgeschwindigkeit (Tasten Q/E)
+  const WISCH = 0.006;   // Empfindlichkeit beim Drehen per Wischen am Handy
+  const STICK = 50;      // Reichweite des Handy-Sticks in Pixeln
 
   // Roter Balken oben, falls ein Bild nicht geladen werden kann
   function meldung(text) {
@@ -58,7 +67,7 @@
   raum.position.y = 2;
   scene.add(raum);
 
-  // Objekt: flache Fläche mit den Bildern (weiche Darstellung)
+  // Objekt: flache Fläche mit den Bildern
   const loader = new THREE.TextureLoader();
   const bilder = [];
   for (let i = 0; i < ANZAHL; i++) {
@@ -76,31 +85,83 @@
   objekt.position.set(0, HOEHE / 2, 0);
   scene.add(objekt);
 
-  // Steuerung: Pfeiltasten/WASD oder Wischen (links/rechts = drehen, hoch/runter = gehen)
+  // ---------- Steuerung am Computer ----------
+  // W/S = vor/zurück, A/D = seitlich laufen, Q/E = drehen
   const tasten = {};
   addEventListener('keydown', e => tasten[e.code] = true);
   addEventListener('keyup', e => tasten[e.code] = false);
-  let startX = 0, startY = 0, drehen = 0, gehen = 0;
-  const begrenze = v => Math.max(-1, Math.min(1, v));
-  addEventListener('touchstart', e => { startX = e.touches[0].clientX; startY = e.touches[0].clientY; });
-  addEventListener('touchmove', e => {
-    drehen = begrenze((e.touches[0].clientX - startX) / 80);
-    gehen = begrenze(-(e.touches[0].clientY - startY) / 80);
-  });
-  addEventListener('touchend', () => { drehen = 0; gehen = 0; });
+  addEventListener('blur', () => { for (const k in tasten) tasten[k] = false; });
 
+  // ---------- Steuerung am Handy ----------
+  // Linke Bildschirmhälfte: Stick zum Laufen. Rechte Hälfte: wischen = umsehen.
+  const stickBasis = document.getElementById('stickBasis');
+  const stickKnopf = document.getElementById('stickKnopf');
+  let stickId = null, stickX = 0, stickY = 0;
+  let stickVecX = 0, stickVecY = 0;
+  let blickId = null, blickX = 0;
   let yaw = 0;
+
+  function setzePos(el, x, y) { el.style.left = x + 'px'; el.style.top = y + 'px'; }
+
+  addEventListener('touchstart', e => {
+    e.preventDefault();
+    for (const t of e.changedTouches) {
+      if (t.clientX < innerWidth / 2 && stickId === null) {
+        stickId = t.identifier; stickX = t.clientX; stickY = t.clientY;
+        setzePos(stickBasis, stickX, stickY); setzePos(stickKnopf, stickX, stickY);
+        stickBasis.style.display = 'block'; stickKnopf.style.display = 'block';
+      } else if (t.clientX >= innerWidth / 2 && blickId === null) {
+        blickId = t.identifier; blickX = t.clientX;
+      }
+    }
+  }, { passive: false });
+
+  addEventListener('touchmove', e => {
+    e.preventDefault();
+    for (const t of e.changedTouches) {
+      if (t.identifier === stickId) {
+        let dx = t.clientX - stickX, dy = t.clientY - stickY;
+        const len = Math.hypot(dx, dy);
+        if (len > STICK) { dx = dx / len * STICK; dy = dy / len * STICK; }
+        stickVecX = dx / STICK; stickVecY = dy / STICK;
+        setzePos(stickKnopf, stickX + dx, stickY + dy);
+      } else if (t.identifier === blickId) {
+        yaw -= (t.clientX - blickX) * WISCH;
+        blickX = t.clientX;
+      }
+    }
+  }, { passive: false });
+
+  function touchEnde(e) {
+    for (const t of e.changedTouches) {
+      if (t.identifier === stickId) {
+        stickId = null; stickVecX = 0; stickVecY = 0;
+        stickBasis.style.display = 'none'; stickKnopf.style.display = 'none';
+      } else if (t.identifier === blickId) {
+        blickId = null;
+      }
+    }
+  }
+  addEventListener('touchend', touchEnde);
+  addEventListener('touchcancel', touchEnde);
+
+  // ---------- Hauptschleife ----------
   let letzte = performance.now();
   function schleife(jetzt) {
     const dt = Math.min((jetzt - letzte) / 1000, 0.05);
     letzte = jetzt;
 
-    const links = (tasten.ArrowLeft || tasten.KeyA ? 1 : 0) - (tasten.ArrowRight || tasten.KeyD ? 1 : 0);
-    const vor = (tasten.ArrowUp || tasten.KeyW ? 1 : 0) - (tasten.ArrowDown || tasten.KeyS ? 1 : 0);
-    yaw += (links - drehen) * 2 * dt;
-    const schritt = (vor + gehen) * 4 * dt;
-    cam.position.x -= Math.sin(yaw) * schritt;
-    cam.position.z -= Math.cos(yaw) * schritt;
+    // Drehen mit Q/E (oder Pfeil links/rechts)
+    yaw += ((tasten.KeyQ || tasten.ArrowLeft ? 1 : 0) - (tasten.KeyE || tasten.ArrowRight ? 1 : 0)) * DREHTEMPO * dt;
+
+    // Laufen: vor/zurück und seitlich, Tasten und Stick zusammen
+    let vor = (tasten.KeyW || tasten.ArrowUp ? 1 : 0) - (tasten.KeyS || tasten.ArrowDown ? 1 : 0) - stickVecY;
+    let seit = (tasten.KeyD ? 1 : 0) - (tasten.KeyA ? 1 : 0) + stickVecX;
+    const laenge = Math.hypot(vor, seit);
+    if (laenge > 1) { vor /= laenge; seit /= laenge; }
+    const s = Math.sin(yaw), c = Math.cos(yaw);
+    cam.position.x += (-s * vor + c * seit) * TEMPO * dt;
+    cam.position.z += (-c * vor - s * seit) * TEMPO * dt;
 
     // Raumgrenzen
     const grenze = RAUM - 0.5;
