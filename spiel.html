@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+  <title>Retro-Raum</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #222; overflow: hidden; touch-action: none; }
+    canvas { width: 100%; height: 100%; display: block; image-rendering: pixelated; }
+  </style>
+  <script type="importmap">
+    { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }
+  </script>
+</head>
+<body>
+<script type="module">
+  import * as THREE from 'three';
+
+  const DATEI = 'images/objekt_';  // Dateiname vor der Nummer, z. B. images/objekt_0.png
+  const ANZAHL = 4;      // 0 = vorne, 1 = rechts, 2 = hinten, 3 = links
+  const RASTER = 4;      // Pixelgröße: höher = gröberer Retro-Look
+  const RAUM = 10;       // halbe Raumbreite
+
+  // Renderer mit niedriger Auflösung, per CSS hochskaliert
+  const renderer = new THREE.WebGLRenderer({ antialias: false });
+  document.body.appendChild(renderer.domElement);
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x333333);
+  const cam = new THREE.PerspectiveCamera(70, 1, 0.1, 100);
+  cam.position.set(0, 1.6, 7);
+  cam.rotation.order = 'YXZ';
+
+  function groesse() {
+    renderer.setSize(innerWidth / RASTER, innerHeight / RASTER, false);
+    cam.aspect = innerWidth / innerHeight;
+    cam.updateProjectionMatrix();
+  }
+  addEventListener('resize', groesse);
+  groesse();
+
+  // Raum: Wände grau-blau, Decke und Boden dunkelgrau
+  const wand = new THREE.MeshBasicMaterial({ color: 0x777788, side: THREE.BackSide });
+  const dunkel = new THREE.MeshBasicMaterial({ color: 0x333333, side: THREE.BackSide });
+  const raum = new THREE.Mesh(
+    new THREE.BoxGeometry(RAUM * 2, 4, RAUM * 2),
+    [wand, wand, dunkel, dunkel, wand, wand]
+  );
+  raum.position.y = 2;
+  scene.add(raum);
+
+  // Objekt: flache Fläche mit den Bildern
+  const loader = new THREE.TextureLoader();
+  const bilder = [];
+  for (let i = 0; i < ANZAHL; i++) {
+    const t = loader.load(`${DATEI}${i}.png`);
+    t.magFilter = THREE.NearestFilter;
+    t.colorSpace = THREE.SRGBColorSpace;
+    bilder.push(t);
+  }
+  const objekt = new THREE.Mesh(
+    new THREE.PlaneGeometry(2, 2),
+    new THREE.MeshBasicMaterial({ map: bilder[0], transparent: true, alphaTest: 0.5, side: THREE.DoubleSide })
+  );
+  objekt.position.set(0, 1, 0);
+  scene.add(objekt);
+
+  // Steuerung: Pfeiltasten/WASD oder Wischen (links/rechts = drehen, hoch/runter = gehen)
+  const tasten = {};
+  addEventListener('keydown', e => tasten[e.code] = true);
+  addEventListener('keyup', e => tasten[e.code] = false);
+  let startX = 0, startY = 0, drehen = 0, gehen = 0;
+  const begrenze = v => Math.max(-1, Math.min(1, v));
+  addEventListener('touchstart', e => { startX = e.touches[0].clientX; startY = e.touches[0].clientY; });
+  addEventListener('touchmove', e => {
+    drehen = begrenze((e.touches[0].clientX - startX) / 80);
+    gehen = begrenze(-(e.touches[0].clientY - startY) / 80);
+  });
+  addEventListener('touchend', () => { drehen = 0; gehen = 0; });
+
+  let yaw = 0;
+  let letzte = performance.now();
+  function schleife(jetzt) {
+    const dt = Math.min((jetzt - letzte) / 1000, 0.05);
+    letzte = jetzt;
+
+    const links = (tasten.ArrowLeft || tasten.KeyA ? 1 : 0) - (tasten.ArrowRight || tasten.KeyD ? 1 : 0);
+    const vor = (tasten.ArrowUp || tasten.KeyW ? 1 : 0) - (tasten.ArrowDown || tasten.KeyS ? 1 : 0);
+    yaw += (links - drehen) * 2 * dt;
+    const schritt = (vor + gehen) * 4 * dt;
+    cam.position.x -= Math.sin(yaw) * schritt;
+    cam.position.z -= Math.cos(yaw) * schritt;
+
+    // Raumgrenzen
+    const grenze = RAUM - 0.5;
+    cam.position.x = Math.max(-grenze, Math.min(grenze, cam.position.x));
+    cam.position.z = Math.max(-grenze, Math.min(grenze, cam.position.z));
+
+    // Nicht durchs Objekt laufen
+    const dx = cam.position.x - objekt.position.x;
+    const dz = cam.position.z - objekt.position.z;
+    const abstand = Math.hypot(dx, dz);
+    if (abstand < 1.3) {
+      cam.position.x = objekt.position.x + (dx / abstand) * 1.3;
+      cam.position.z = objekt.position.z + (dz / abstand) * 1.3;
+    }
+    cam.rotation.y = yaw;
+
+    // Objekt dreht sich zur Kamera, passendes Bild wählen
+    const a = Math.atan2(dx, dz);
+    objekt.rotation.y = a;
+    let index = Math.round((a / (Math.PI * 2)) * ANZAHL);
+    index = ((index % ANZAHL) + ANZAHL) % ANZAHL;
+    objekt.material.map = bilder[index];
+
+    renderer.render(scene, cam);
+    requestAnimationFrame(schleife);
+  }
+  requestAnimationFrame(schleife);
+</script>
+</body>
+</html>
