@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.css">
   <script src="https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.js"></script>
   <style>
-    body { margin: 0; }
+    body { margin: 0; background: #333; }
     #panorama { width: 100%; height: 100vh; }
   </style>
 </head>
@@ -18,43 +18,58 @@
     // Bildmitte = 180° = Yaw 0.
     const w = grad => grad - 180;
 
+    // Gemeinsame Einstellungen für alle Räume.
+    // vaov = vertikale Höhe des Bildstreifens in Grad
+    // Berechnung: 360 × Bildhöhe ÷ Bildbreite (in Pixeln)
+    const bild = {
+      type: 'equirectangular',
+      haov: 360,
+      vaov: 60,
+      vOffset: 0,
+      minPitch: -45,
+      maxPitch: 45,
+      yaw: 0,
+      pitch: 0,
+      hfov: 100
+    };
+
     pannellum.viewer('panorama', {
-      default: { firstScene: 'raum1', sceneFadeDuration: 1000 },
+      default: {
+        firstScene: 'raum1',
+        sceneFadeDuration: 1000,
+        backgroundColor: [0.2, 0.2, 0.2]   // Dunkelgrau für Decke und Boden
+      },
       scenes: {
         raum1: {
+          ...bild,
           title: 'Raum 1',
-          type: 'equirectangular',
           panorama: 'images/raum1.jpg',
-          yaw: 0, pitch: 0, hfov: 100,
           hotSpots: [
-            { pitch: 0, yaw: w(80),  type: 'scene', text: 'Raum 2', sceneId: 'raum2' },
-            { pitch: 0, yaw: w(195), type: 'scene', text: 'Raum 4', sceneId: 'raum4' }
+            { pitch: 0, yaw: w(60),  type: 'scene', text: 'Raum 2', sceneId: 'raum2' },
+            { pitch: 0, yaw: w(190), type: 'scene', text: 'Raum 4', sceneId: 'raum4' }
           ]
         },
         raum2: {
+          ...bild,
           title: 'Raum 2',
-          type: 'equirectangular',
           panorama: 'images/raum2.jpg',
-          yaw: 0, pitch: 0, hfov: 100,
           hotSpots: [
             { pitch: 0, yaw: w(170), type: 'scene', text: 'Raum 3', sceneId: 'raum3' },
             { pitch: 0, yaw: w(0),   type: 'scene', text: 'Zurück zu Raum 1', sceneId: 'raum1' }
           ]
         },
         raum3: {
+          ...bild,
           title: 'Raum 3',
-          type: 'equirectangular',
           panorama: 'images/raum3.jpg',
-          yaw: 0, pitch: 0, hfov: 100,
           hotSpots: [
             { pitch: 0, yaw: w(0), type: 'scene', text: 'Zurück zu Raum 2', sceneId: 'raum2' }
           ]
         },
         raum4: {
+          ...bild,
           title: 'Raum 4',
-          type: 'equirectangular',
           panorama: 'images/raum4.jpg',
-          yaw: 0, pitch: 0, hfov: 100,
           hotSpots: [
             { pitch: 0, yaw: w(0), type: 'scene', text: 'Zurück zu Raum 1', sceneId: 'raum1' }
           ]
