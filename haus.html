@@ -14,6 +14,10 @@
 <body>
   <div id="panorama"></div>
   <script>
+    // Winkel vom linken Bildrand (0-360°) in Pannellum-Yaw umrechnen.
+    // Bildmitte = 180° = Yaw 0.
+    const w = grad => grad - 180;
+
     pannellum.viewer('panorama', {
       default: { firstScene: 'raum1', sceneFadeDuration: 1000 },
       scenes: {
@@ -21,17 +25,34 @@
           title: 'Raum 1',
           type: 'equirectangular',
           panorama: 'images/raum1.jpg',
+          yaw: 0, pitch: 0, hfov: 100,
           hotSpots: [
-            { pitch: 0, yaw: 90, type: 'scene', text: 'Weiter zu Raum 2', sceneId: 'raum2' }
+            { pitch: 0, yaw: w(60),  type: 'scene', text: 'Raum 2', sceneId: 'raum2' },
+            { pitch: 0, yaw: w(190), type: 'scene', text: 'Raum 4', sceneId: 'raum4' }
           ]
         },
         raum2: {
           title: 'Raum 2',
           type: 'equirectangular',
           panorama: 'images/raum2.jpg',
+          yaw: 0, pitch: 0, hfov: 100,
           hotSpots: [
-            { pitch: 0, yaw: -90, type: 'scene', text: 'Zurück zu Raum 1', sceneId: 'raum1' }
+            { pitch: 0, yaw: w(170), type: 'scene', text: 'Raum 3', sceneId: 'raum3' }
           ]
+        },
+        raum3: {
+          title: 'Raum 3',
+          type: 'equirectangular',
+          panorama: 'images/raum3.jpg',
+          yaw: 0, pitch: 0, hfov: 100,
+          hotSpots: []
+        },
+        raum4: {
+          title: 'Raum 4',
+          type: 'equirectangular',
+          panorama: 'images/raum4.jpg',
+          yaw: 0, pitch: 0, hfov: 100,
+          hotSpots: []
         }
       }
     });
