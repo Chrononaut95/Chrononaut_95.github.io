@@ -3,10 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
-  <title>Retro-Raum</title>
+  <title>Raum</title>
   <style>
     html, body { margin: 0; height: 100%; background: #222; overflow: hidden; touch-action: none; }
-    canvas { width: 100%; height: 100%; display: block; image-rendering: pixelated; }
+    canvas { width: 100%; height: 100%; display: block; }
   </style>
   <script type="importmap">
     { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }
@@ -18,10 +18,9 @@
 
   const DATEI = 'images/object_';  // Dateiname vor der Nummer, z. B. images/object_0.png
   const ANZAHL = 4;      // 0 = vorne, 1 = rechts, 2 = hinten, 3 = links
-  const RASTER = 4;      // Pixelgröße: höher = gröberer Retro-Look
   const RAUM = 10;       // halbe Raumbreite
   const HOEHE = 2;                   // Höhe des Objekts im Raum
-  const BREITE = HOEHE * 224 / 320;  // Breite passend zum Bildformat (224 x 320 px)
+  const BREITE = HOEHE * 448 / 640;  // Breite passend zum Bildformat (448 x 640 px)
 
   // Roter Balken oben, falls ein Bild nicht geladen werden kann
   function meldung(text) {
@@ -31,8 +30,9 @@
     document.body.appendChild(d);
   }
 
-  // Renderer mit niedriger Auflösung, per CSS hochskaliert
-  const renderer = new THREE.WebGLRenderer({ antialias: false });
+  // Renderer in voller Auflösung, mit Kantenglättung
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   document.body.appendChild(renderer.domElement);
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x333333);
@@ -41,7 +41,7 @@
   cam.rotation.order = 'YXZ';
 
   function groesse() {
-    renderer.setSize(innerWidth / RASTER, innerHeight / RASTER, false);
+    renderer.setSize(innerWidth, innerHeight, false);
     cam.aspect = innerWidth / innerHeight;
     cam.updateProjectionMatrix();
   }
@@ -58,14 +58,14 @@
   raum.position.y = 2;
   scene.add(raum);
 
-  // Objekt: flache Fläche mit den Bildern
+  // Objekt: flache Fläche mit den Bildern (weiche Darstellung)
   const loader = new THREE.TextureLoader();
   const bilder = [];
   for (let i = 0; i < ANZAHL; i++) {
     const t = loader.load(`${DATEI}${i}.png`, undefined, undefined,
       () => meldung('Bild fehlt: ' + DATEI + i + '.png'));
-    t.magFilter = THREE.NearestFilter;
     t.colorSpace = THREE.SRGBColorSpace;
+    t.anisotropy = renderer.capabilities.getMaxAnisotropy();
     bilder.push(t);
   }
   const objekt = new THREE.Mesh(
