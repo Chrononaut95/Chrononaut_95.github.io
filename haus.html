@@ -37,7 +37,8 @@
           panorama: 'images/raum2.jpg',
           yaw: 0, pitch: 0, hfov: 100,
           hotSpots: [
-            { pitch: 0, yaw: w(170), type: 'scene', text: 'Raum 3', sceneId: 'raum3' }
+            { pitch: 0, yaw: w(170), type: 'scene', text: 'Raum 3', sceneId: 'raum3' },
+            { pitch: 0, yaw: w(0),   type: 'scene', text: 'Zurück zu Raum 1', sceneId: 'raum1' }
           ]
         },
         raum3: {
@@ -45,14 +46,18 @@
           type: 'equirectangular',
           panorama: 'images/raum3.jpg',
           yaw: 0, pitch: 0, hfov: 100,
-          hotSpots: []
+          hotSpots: [
+            { pitch: 0, yaw: w(0), type: 'scene', text: 'Zurück zu Raum 2', sceneId: 'raum2' }
+          ]
         },
         raum4: {
           title: 'Raum 4',
           type: 'equirectangular',
           panorama: 'images/raum4.jpg',
           yaw: 0, pitch: 0, hfov: 100,
-          hotSpots: []
+          hotSpots: [
+            { pitch: 0, yaw: w(0), type: 'scene', text: 'Zurück zu Raum 1', sceneId: 'raum1' }
+          ]
         }
       }
     });
