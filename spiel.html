@@ -21,15 +21,26 @@
 <script type="module">
   import * as THREE from 'three';
 
-  const DATEI = 'images/object_';  // Dateiname vor der Nummer, z. B. images/object_0.png
-  const ANZAHL = 4;      // 0 = vorne, 1 = rechts, 2 = hinten, 3 = links
-  const RAUM = 10;       // halbe Raumbreite
-  const HOEHE = 2;                   // Höhe des Objekts im Raum
-  const BREITE = HOEHE * 448 / 640;  // Breite passend zum Bildformat (448 x 640 px)
+  // ---------- Einstellungen ----------
+  const DATEI = 'images/object_';     // Objekt-Bilder: images/object_0.png ... object_3.png
+  const ANZAHL = 4;                   // 0 = vorne, 1 = rechts, 2 = hinten, 3 = links
+  const WAND = 'images/wall_';        // Wand-Bilder: images/wall_front.png usw.
+  const WAND_ENDUNG = '.png';         // bei JPG-Bildern: '.jpg'
+
+  const WANDBREITE = 12;                         // Breite jeder Wand (Raum ist quadratisch)
+  const RAUMHOEHE = WANDBREITE * 960 / 1280;     // Höhe passend zum Bildformat 1280 x 960 (4:3)
+  const RAUM = WANDBREITE / 2;                   // halbe Raumbreite
+  const AUGE = 2.2;                              // Augenhöhe der Kamera
+
+  const OBJEKT_HOEHE = 2.5;                      // Höhe des Objekts im Raum
+  const OBJEKT_BREITE = OBJEKT_HOEHE * 448 / 640; // Breite passend zum Bildformat (448 x 640 px)
+  const OBJEKT_RADIUS = 1.5;                     // Mindestabstand zum Objekt
+
   const TEMPO = 4;       // Laufgeschwindigkeit
   const DREHTEMPO = 2;   // Drehgeschwindigkeit (Tasten Q/E)
-  const WISCH = 0.006;   // Empfindlichkeit beim Drehen per Wischen am Handy
+  const WISCH = 0.006;   // Empfindlichkeit beim Umsehen per Wischen am Handy
   const STICK = 50;      // Reichweite des Handy-Sticks in Pixeln
+  const MAX_NEIGUNG = 0.6; // wie weit man hoch/runter schauen darf (Bogenmaß, ca. 35°)
 
   // Roter Balken oben, falls ein Bild nicht geladen werden kann
   function meldung(text) {
@@ -39,14 +50,14 @@
     document.body.appendChild(d);
   }
 
-  // Renderer in voller Auflösung, mit Kantenglättung
+  // ---------- Szene ----------
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   document.body.appendChild(renderer.domElement);
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x333333);
   const cam = new THREE.PerspectiveCamera(70, 1, 0.1, 100);
-  cam.position.set(0, 1.6, 7);
+  cam.position.set(0, AUGE, RAUM - 2);
   cam.rotation.order = 'YXZ';
 
   function groesse() {
@@ -57,49 +68,65 @@
   addEventListener('resize', groesse);
   groesse();
 
-  // Raum: Wände grau-blau, Decke und Boden dunkelgrau
-  const wand = new THREE.MeshBasicMaterial({ color: 0x777788, side: THREE.BackSide });
-  const dunkel = new THREE.MeshBasicMaterial({ color: 0x333333, side: THREE.BackSide });
-  const raum = new THREE.Mesh(
-    new THREE.BoxGeometry(RAUM * 2, 4, RAUM * 2),
-    [wand, wand, dunkel, dunkel, wand, wand]
-  );
-  raum.position.y = 2;
-  scene.add(raum);
-
-  // Objekt: flache Fläche mit den Bildern
   const loader = new THREE.TextureLoader();
-  const bilder = [];
-  for (let i = 0; i < ANZAHL; i++) {
-    const t = loader.load(`${DATEI}${i}.png`, undefined, undefined,
-      () => meldung('Bild fehlt: ' + DATEI + i + '.png'));
+  function textur(pfad) {
+    const t = loader.load(pfad, undefined, undefined, () => meldung('Bild fehlt: ' + pfad));
     t.colorSpace = THREE.SRGBColorSpace;
     t.anisotropy = renderer.capabilities.getMaxAnisotropy();
-    bilder.push(t);
+    return t;
   }
+
+  // Wände: Blick beim Start geht auf die Wand "front"
+  function wandBauen(name, x, z, drehung) {
+    const m = new THREE.Mesh(
+      new THREE.PlaneGeometry(WANDBREITE, RAUMHOEHE),
+      new THREE.MeshBasicMaterial({ map: textur(WAND + name + WAND_ENDUNG) })
+    );
+    m.position.set(x, RAUMHOEHE / 2, z);
+    m.rotation.y = drehung;
+    scene.add(m);
+  }
+  wandBauen('front', 0, -RAUM, 0);              // vor dir beim Start
+  wandBauen('back',  0,  RAUM, Math.PI);        // hinter dir beim Start
+  wandBauen('left', -RAUM, 0,  Math.PI / 2);    // links
+  wandBauen('right', RAUM, 0, -Math.PI / 2);    // rechts
+
+  // Boden und Decke: dunkelgrau
+  const dunkel = new THREE.MeshBasicMaterial({ color: 0x333333 });
+  const boden = new THREE.Mesh(new THREE.PlaneGeometry(WANDBREITE, WANDBREITE), dunkel);
+  boden.rotation.x = -Math.PI / 2;
+  scene.add(boden);
+  const decke = new THREE.Mesh(new THREE.PlaneGeometry(WANDBREITE, WANDBREITE), dunkel);
+  decke.rotation.x = Math.PI / 2;
+  decke.position.y = RAUMHOEHE;
+  scene.add(decke);
+
+  // Objekt: flache Fläche mit den Bildern
+  const bilder = [];
+  for (let i = 0; i < ANZAHL; i++) bilder.push(textur(`${DATEI}${i}.png`));
   const objekt = new THREE.Mesh(
     new THREE.PlaneGeometry(1, 1),
     new THREE.MeshBasicMaterial({ map: bilder[0], transparent: true, alphaTest: 0.5, side: THREE.DoubleSide })
   );
-  objekt.scale.set(BREITE, HOEHE, 1);
-  objekt.position.set(0, HOEHE / 2, 0);
+  objekt.scale.set(OBJEKT_BREITE, OBJEKT_HOEHE, 1);
+  objekt.position.set(0, OBJEKT_HOEHE / 2, 0);
   scene.add(objekt);
 
   // ---------- Steuerung am Computer ----------
-  // W/S = vor/zurück, A/D = seitlich laufen, Q/E = drehen
+  // W/S = vor/zurück, A/D = seitlich, Q/E = drehen, R/F = hoch/runter schauen
   const tasten = {};
   addEventListener('keydown', e => tasten[e.code] = true);
   addEventListener('keyup', e => tasten[e.code] = false);
   addEventListener('blur', () => { for (const k in tasten) tasten[k] = false; });
 
   // ---------- Steuerung am Handy ----------
-  // Linke Bildschirmhälfte: Stick zum Laufen. Rechte Hälfte: wischen = umsehen.
+  // Linke Hälfte: Stick zum Laufen. Rechte Hälfte: wischen = umsehen (auch hoch/runter).
   const stickBasis = document.getElementById('stickBasis');
   const stickKnopf = document.getElementById('stickKnopf');
   let stickId = null, stickX = 0, stickY = 0;
   let stickVecX = 0, stickVecY = 0;
-  let blickId = null, blickX = 0;
-  let yaw = 0;
+  let blickId = null, blickX = 0, blickY = 0;
+  let yaw = 0, neigung = 0;
 
   function setzePos(el, x, y) { el.style.left = x + 'px'; el.style.top = y + 'px'; }
 
@@ -111,7 +138,7 @@
         setzePos(stickBasis, stickX, stickY); setzePos(stickKnopf, stickX, stickY);
         stickBasis.style.display = 'block'; stickKnopf.style.display = 'block';
       } else if (t.clientX >= innerWidth / 2 && blickId === null) {
-        blickId = t.identifier; blickX = t.clientX;
+        blickId = t.identifier; blickX = t.clientX; blickY = t.clientY;
       }
     }
   }, { passive: false });
@@ -127,7 +154,9 @@
         setzePos(stickKnopf, stickX + dx, stickY + dy);
       } else if (t.identifier === blickId) {
         yaw -= (t.clientX - blickX) * WISCH;
-        blickX = t.clientX;
+        neigung -= (t.clientY - blickY) * WISCH;
+        neigung = Math.max(-MAX_NEIGUNG, Math.min(MAX_NEIGUNG, neigung));
+        blickX = t.clientX; blickY = t.clientY;
       }
     }
   }, { passive: false });
@@ -151,8 +180,10 @@
     const dt = Math.min((jetzt - letzte) / 1000, 0.05);
     letzte = jetzt;
 
-    // Drehen mit Q/E (oder Pfeil links/rechts)
+    // Drehen mit Q/E (oder Pfeil links/rechts), hoch/runter schauen mit R/F
     yaw += ((tasten.KeyQ || tasten.ArrowLeft ? 1 : 0) - (tasten.KeyE || tasten.ArrowRight ? 1 : 0)) * DREHTEMPO * dt;
+    neigung += ((tasten.KeyR ? 1 : 0) - (tasten.KeyF ? 1 : 0)) * DREHTEMPO * dt;
+    neigung = Math.max(-MAX_NEIGUNG, Math.min(MAX_NEIGUNG, neigung));
 
     // Laufen: vor/zurück und seitlich, Tasten und Stick zusammen
     let vor = (tasten.KeyW || tasten.ArrowUp ? 1 : 0) - (tasten.KeyS || tasten.ArrowDown ? 1 : 0) - stickVecY;
@@ -172,11 +203,12 @@
     const dx = cam.position.x - objekt.position.x;
     const dz = cam.position.z - objekt.position.z;
     const abstand = Math.hypot(dx, dz);
-    if (abstand < 1.3) {
-      cam.position.x = objekt.position.x + (dx / abstand) * 1.3;
-      cam.position.z = objekt.position.z + (dz / abstand) * 1.3;
+    if (abstand < OBJEKT_RADIUS) {
+      cam.position.x = objekt.position.x + (dx / abstand) * OBJEKT_RADIUS;
+      cam.position.z = objekt.position.z + (dz / abstand) * OBJEKT_RADIUS;
     }
     cam.rotation.y = yaw;
+    cam.rotation.x = neigung;
 
     // Objekt dreht sich zur Kamera, passendes Bild wählen
     const a = Math.atan2(dx, dz);
