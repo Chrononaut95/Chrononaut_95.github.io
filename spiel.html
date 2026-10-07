@@ -22,19 +22,32 @@
   import * as THREE from 'three';
 
   // ---------- Einstellungen ----------
-  const DATEI = 'images/object_';     // Objekt-Bilder: images/object_0.png ... object_3.png
-  const ANZAHL = 4;                   // 0 = vorne, 1 = rechts, 2 = hinten, 3 = links
+  const BILD = 'images/object_';      // Objekt-Bilder: images/object_0.png usw.
   const WAND = 'images/wall_';        // Wand-Bilder: images/wall_front.png usw.
   const WAND_ENDUNG = '.png';         // bei JPG-Bildern: '.jpg'
+
+  // Objekte im Raum.
+  // ansichten: pro Blickrichtung [Mund zu, Mund offen] (nur eine Zahl = kein Mundwechsel).
+  // Reihenfolge der Ansichten: vorne, dann immer weiter nach rechts um das Objekt herum.
+  // x/z = Position im Raum (0/0 = Raummitte), hoehe = Höhe, seite = Breite/Höhe des Bildes.
+  const OBJEKTE = [
+    { // Fuchs: 4 Ansichten, ohne Mundwechsel
+      x: 0, z: 0, hoehe: 2.5, seite: 448 / 640, radius: 1.5,
+      ansichten: [[0], [1], [2], [3]]
+    },
+    { // Socken-Figur: 8 Ansichten, Mund wechselt zufällig zwischen offen und zu
+      x: -3.5, z: -1.5, hoehe: 2.5, seite: 706 / 640, radius: 1.2,
+      mund: true,
+      ansichten: [[4, 5], [6, 7], [8, 9], [10, 11], [12, 12], [13, 14], [15, 16], [17, 18]]
+    }
+  ];
+  const MUND_MIN = 0.5;   // kürzeste Zeit bis zum nächsten Wechsel (Sekunden)
+  const MUND_MAX = 1.5;   // längste Zeit bis zum nächsten Wechsel (Sekunden)
 
   const WANDBREITE = 12;                         // Breite jeder Wand (Raum ist quadratisch)
   const RAUMHOEHE = WANDBREITE * 960 / 1280;     // Höhe passend zum Bildformat 1280 x 960 (4:3)
   const RAUM = WANDBREITE / 2;                   // halbe Raumbreite
   const AUGE = 2.2;                              // Augenhöhe der Kamera
-
-  const OBJEKT_HOEHE = 2.5;                      // Höhe des Objekts im Raum
-  const OBJEKT_BREITE = OBJEKT_HOEHE * 448 / 640; // Breite passend zum Bildformat (448 x 640 px)
-  const OBJEKT_RADIUS = 1.5;                     // Mindestabstand zum Objekt
 
   const TEMPO = 4;       // Laufgeschwindigkeit
   const DREHTEMPO = 2;   // Drehgeschwindigkeit (Tasten Q/E)
@@ -69,10 +82,13 @@
   groesse();
 
   const loader = new THREE.TextureLoader();
+  const speicher = {};   // jedes Bild nur einmal laden
   function textur(pfad) {
+    if (speicher[pfad]) return speicher[pfad];
     const t = loader.load(pfad, undefined, undefined, () => meldung('Bild fehlt: ' + pfad));
     t.colorSpace = THREE.SRGBColorSpace;
     t.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    speicher[pfad] = t;
     return t;
   }
 
@@ -101,16 +117,19 @@
   decke.position.y = RAUMHOEHE;
   scene.add(decke);
 
-  // Objekt: flache Fläche mit den Bildern
-  const bilder = [];
-  for (let i = 0; i < ANZAHL; i++) bilder.push(textur(`${DATEI}${i}.png`));
-  const objekt = new THREE.Mesh(
-    new THREE.PlaneGeometry(1, 1),
-    new THREE.MeshBasicMaterial({ map: bilder[0], transparent: true, alphaTest: 0.5, side: THREE.DoubleSide })
-  );
-  objekt.scale.set(OBJEKT_BREITE, OBJEKT_HOEHE, 1);
-  objekt.position.set(0, OBJEKT_HOEHE / 2, 0);
-  scene.add(objekt);
+  // Objekte: flache Flächen, die sich zur Kamera drehen
+  for (const o of OBJEKTE) {
+    o.texturen = o.ansichten.map(paar => paar.map(nr => textur(`${BILD}${nr}.png`)));
+    o.offen = false;
+    o.timer = MUND_MIN + Math.random() * (MUND_MAX - MUND_MIN);
+    o.mesh = new THREE.Mesh(
+      new THREE.PlaneGeometry(1, 1),
+      new THREE.MeshBasicMaterial({ map: o.texturen[0][0], transparent: true, alphaTest: 0.5, side: THREE.DoubleSide })
+    );
+    o.mesh.scale.set(o.hoehe * o.seite, o.hoehe, 1);
+    o.mesh.position.set(o.x, o.hoehe / 2, o.z);
+    scene.add(o.mesh);
+  }
 
   // ---------- Steuerung am Computer ----------
   // W/S = vor/zurück, A/D = seitlich, Q/E = drehen, R/F = hoch/runter schauen
@@ -199,23 +218,39 @@
     cam.position.x = Math.max(-grenze, Math.min(grenze, cam.position.x));
     cam.position.z = Math.max(-grenze, Math.min(grenze, cam.position.z));
 
-    // Nicht durchs Objekt laufen
-    const dx = cam.position.x - objekt.position.x;
-    const dz = cam.position.z - objekt.position.z;
-    const abstand = Math.hypot(dx, dz);
-    if (abstand < OBJEKT_RADIUS) {
-      cam.position.x = objekt.position.x + (dx / abstand) * OBJEKT_RADIUS;
-      cam.position.z = objekt.position.z + (dz / abstand) * OBJEKT_RADIUS;
+    // Objekte: Abstand halten, zur Kamera drehen, Ansicht und Mundzustand wählen
+    for (const o of OBJEKTE) {
+      let dx = cam.position.x - o.x;
+      let dz = cam.position.z - o.z;
+      const abstand = Math.hypot(dx, dz);
+      if (abstand < o.radius) {
+        cam.position.x = o.x + (dx / abstand) * o.radius;
+        cam.position.z = o.z + (dz / abstand) * o.radius;
+        dx = cam.position.x - o.x;
+        dz = cam.position.z - o.z;
+      }
+
+      // Mund wechselt zufällig alle MUND_MIN bis MUND_MAX Sekunden,
+      // für alle Blickrichtungen gleichzeitig
+      if (o.mund) {
+        o.timer -= dt;
+        if (o.timer <= 0) {
+          o.offen = !o.offen;
+          o.timer = MUND_MIN + Math.random() * (MUND_MAX - MUND_MIN);
+        }
+      }
+
+      const a = Math.atan2(dx, dz);
+      o.mesh.rotation.y = a;
+      const n = o.ansichten.length;
+      let index = Math.round((a / (Math.PI * 2)) * n);
+      index = ((index % n) + n) % n;
+      const paar = o.texturen[index];
+      o.mesh.material.map = (o.offen && paar[1]) ? paar[1] : paar[0];
     }
+
     cam.rotation.y = yaw;
     cam.rotation.x = neigung;
-
-    // Objekt dreht sich zur Kamera, passendes Bild wählen
-    const a = Math.atan2(dx, dz);
-    objekt.rotation.y = a;
-    let index = Math.round((a / (Math.PI * 2)) * ANZAHL);
-    index = ((index % ANZAHL) + ANZAHL) % ANZAHL;
-    objekt.material.map = bilder[index];
 
     renderer.render(scene, cam);
     requestAnimationFrame(schleife);
