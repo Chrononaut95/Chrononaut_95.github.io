@@ -7,6 +7,7 @@
   <style>
     html, body { margin: 0; height: 100%; background: #222; overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none; }
     canvas { width: 100%; height: 100%; display: block; }
+    #start { position: fixed; inset: 0; z-index: 8; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,.55); color: #fff; font: 22px sans-serif; cursor: pointer; }
     #stickBasis, #stickKnopf { position: fixed; border-radius: 50%; display: none; pointer-events: none; z-index: 5; }
     #stickBasis { width: 110px; height: 110px; margin: -55px 0 0 -55px; border: 2px solid rgba(255,255,255,.45); background: rgba(255,255,255,.08); }
     #stickKnopf { width: 48px; height: 48px; margin: -24px 0 0 -24px; background: rgba(255,255,255,.5); }
@@ -16,46 +17,50 @@
   </script>
 </head>
 <body>
+<div id="start">Tippen zum Starten</div>
 <div id="stickBasis"></div>
 <div id="stickKnopf"></div>
 <script type="module">
   import * as THREE from 'three';
 
   // ---------- Einstellungen ----------
-  const BILD = 'images/object_';      // Objekt-Bilder: images/object_0.png usw.
-  const WAND = 'images/wall_';        // Wand-Bilder: images/wall_front.png usw.
-  const WAND_ENDUNG = '.png';         // bei JPG-Bildern: '.jpg'
+  const BILD = 'images/object_';
+  const WAND = 'images/wall_';
+  const WAND_ENDUNG = '.png';
 
-  // Objekte im Raum.
-  // ansichten: pro Blickrichtung [Mund zu, Mund offen] (nur eine Zahl = kein Mundwechsel).
-  // Reihenfolge der Ansichten: vorne, dann immer weiter nach rechts um das Objekt herum.
-  // x/z = Position im Raum (0/0 = Raummitte), hoehe = Höhe, seite = Breite/Höhe des Bildes.
+  // ansichten: pro Blickrichtung [Mund zu, Mund offen]
+  // Fuchs: 0 = von vorne, 1 = Schnauze links, 2 = von hinten, 3 = Schnauze rechts
+  // Socke: vorne, dann immer weiter nach rechts um sie herum
   const OBJEKTE = [
-    { // Fuchs: 4 Ansichten, ohne Mundwechsel
-      x: -3.5, z: -1.5, hoehe: 2.5, seite: 448 / 640, radius: 1.5,
+    { // Fuchs: die steuerbare Figur
+      steuerbar: true,
+      x: 0, z: 2.2, hoehe: 2.5, seite: 448 / 640, radius: 0.6,
       ansichten: [[0], [1], [2], [3]]
     },
-    { // Socken-Figur: 8 Ansichten, Mund wechselt zufällig zwischen offen und zu
+    { // Socke: steht in der Mitte und singt
       x: 0, z: 0, hoehe: 2.5, seite: 706 / 640, radius: 1.2,
       mund: true,
+      lied: 'sounds/lied.mp3',
+      // Zum Kreislaufen die nächste Zeile aktivieren (// entfernen):
+      // bahn: { mx: 0, mz: 0, radius: 3, umlauf: 20, start: 0, richtung: 1 },
       ansichten: [[4, 5], [6, 7], [8, 9], [10, 11], [12, 12], [13, 14], [15, 16], [17, 18]]
     }
   ];
-  const MUND_MIN = 0.5;   // kürzeste Zeit bis zum nächsten Wechsel (Sekunden)
-  const MUND_MAX = 1.5;   // längste Zeit bis zum nächsten Wechsel (Sekunden)
+  const MUND_MIN = 0.5, MUND_MAX = 1.5;   // Mundwechsel in Sekunden
 
-  const WANDBREITE = 12;                         // Breite jeder Wand (Raum ist quadratisch)
-  const RAUMHOEHE = WANDBREITE * 960 / 1280;     // Höhe passend zum Bildformat 1280 x 960 (4:3)
-  const RAUM = WANDBREITE / 2;                   // halbe Raumbreite
-  const AUGE = 2.2;                              // Augenhöhe der Kamera
+  const WANDBREITE = 12;
+  const RAUMHOEHE = WANDBREITE * 960 / 1280;
+  const RAUM = WANDBREITE / 2;
 
-  const TEMPO = 4;       // Laufgeschwindigkeit
-  const DREHTEMPO = 2;   // Drehgeschwindigkeit (Tasten Q/E)
-  const WISCH = 0.006;   // Empfindlichkeit beim Umsehen per Wischen am Handy
-  const STICK = 50;      // Reichweite des Handy-Sticks in Pixeln
-  const MAX_NEIGUNG = 0.6; // wie weit man hoch/runter schauen darf (Bogenmaß, ca. 35°)
+  const CAM_ABSTAND = 4;    // Abstand der Kamera zum Fuchs
+  const START_ELEV = 0.3;   // Anfangshöhe der Kamera (Bogenmaß)
+  const ZIEL_Y = 1.3;       // Höhe, auf die die Kamera zielt
+  const TEMPO = 4;          // Laufgeschwindigkeit
+  const DREHTEMPO = 2;      // Schwenken mit Q/E
+  const WISCH = 0.006;      // Wischen am Handy
+  const STICK = 50;
+  const MAX_NEIGUNG = 0.6;
 
-  // Roter Balken oben, falls ein Bild nicht geladen werden kann
   function meldung(text) {
     const d = document.createElement('div');
     d.style.cssText = 'position:fixed;top:0;left:0;right:0;background:#c00;color:#fff;font:14px sans-serif;padding:6px;z-index:9';
@@ -70,8 +75,8 @@
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x333333);
   const cam = new THREE.PerspectiveCamera(70, 1, 0.1, 100);
-  cam.position.set(0, AUGE, RAUM - 2);
-  cam.rotation.order = 'YXZ';
+  const hoerer = new THREE.AudioListener();
+  cam.add(hoerer);
 
   function groesse() {
     renderer.setSize(innerWidth, innerHeight, false);
@@ -82,17 +87,15 @@
   groesse();
 
   const loader = new THREE.TextureLoader();
-  const speicher = {};   // jedes Bild nur einmal laden
+  const speicher = {};
   function textur(pfad) {
     if (speicher[pfad]) return speicher[pfad];
     const t = loader.load(pfad, undefined, undefined, () => meldung('Bild fehlt: ' + pfad));
     t.colorSpace = THREE.SRGBColorSpace;
     t.anisotropy = renderer.capabilities.getMaxAnisotropy();
-    speicher[pfad] = t;
-    return t;
+    return (speicher[pfad] = t);
   }
 
-  // Wände: Blick beim Start geht auf die Wand "front"
   function wandBauen(name, x, z, drehung) {
     const m = new THREE.Mesh(
       new THREE.PlaneGeometry(WANDBREITE, RAUMHOEHE),
@@ -102,12 +105,11 @@
     m.rotation.y = drehung;
     scene.add(m);
   }
-  wandBauen('front', 0, -RAUM, 0);              // vor dir beim Start
-  wandBauen('back',  0,  RAUM, Math.PI);        // hinter dir beim Start
-  wandBauen('left', -RAUM, 0,  Math.PI / 2);    // links
-  wandBauen('right', RAUM, 0, -Math.PI / 2);    // rechts
+  wandBauen('front', 0, -RAUM, 0);
+  wandBauen('back',  0,  RAUM, Math.PI);
+  wandBauen('left', -RAUM, 0,  Math.PI / 2);
+  wandBauen('right', RAUM, 0, -Math.PI / 2);
 
-  // Boden und Decke: dunkelgrau
   const dunkel = new THREE.MeshBasicMaterial({ color: 0x333333 });
   const boden = new THREE.Mesh(new THREE.PlaneGeometry(WANDBREITE, WANDBREITE), dunkel);
   boden.rotation.x = -Math.PI / 2;
@@ -117,39 +119,63 @@
   decke.position.y = RAUMHOEHE;
   scene.add(decke);
 
-  // Objekte: flache Flächen, die sich zur Kamera drehen
+  // ---------- Objekte ----------
+  const audioLader = new THREE.AudioLoader();
   for (const o of OBJEKTE) {
     o.texturen = o.ansichten.map(paar => paar.map(nr => textur(`${BILD}${nr}.png`)));
     o.offen = false;
+    o.singt = false;
     o.timer = MUND_MIN + Math.random() * (MUND_MAX - MUND_MIN);
+    o.kurs = 0;
+    o.winkel = o.bahn ? o.bahn.start * Math.PI / 180 : 0;
     o.mesh = new THREE.Mesh(
       new THREE.PlaneGeometry(1, 1),
       new THREE.MeshBasicMaterial({ map: o.texturen[0][0], transparent: true, alphaTest: 0.5, side: THREE.DoubleSide })
     );
     o.mesh.scale.set(o.hoehe * o.seite, o.hoehe, 1);
-    o.mesh.position.set(o.x, o.hoehe / 2, o.z);
     scene.add(o.mesh);
+    if (o.lied) {
+      o.klang = new THREE.PositionalAudio(hoerer);
+      o.klang.setLoop(true);
+      o.klang.setRefDistance(5);
+      o.klang.setRolloffFactor(0.8);
+      o.mesh.add(o.klang);
+      audioLader.load(o.lied, buf => o.klang.setBuffer(buf), undefined, () => meldung('Sound fehlt: ' + o.lied));
+    }
   }
+  const fuchs = OBJEKTE.find(o => o.steuerbar);
 
-  // ---------- Steuerung am Computer ----------
-  // W/S = vor/zurück, A/D = seitlich, Q/E = drehen, R/F = hoch/runter schauen
+  // Start-Fläche (Browser erlauben Ton erst nach einem Tipp)
+  const startFeld = document.getElementById('start');
+  if (!OBJEKTE.some(o => o.lied)) startFeld.style.display = 'none';
+  startFeld.addEventListener('click', () => {
+    hoerer.context.resume();
+    for (const o of OBJEKTE) {
+      if (!o.klang) continue;
+      o.singt = true;
+      if (o.klang.buffer && !o.klang.isPlaying) o.klang.play(); else o.klang.autoplay = true;
+    }
+    startFeld.style.display = 'none';
+  });
+
+  // ---------- Steuerung ----------
+  // W/S/A/D = laufen (aus Sicht der Kamera), Q/E = um den Fuchs schwenken, R/F = Kamera tiefer/höher
   const tasten = {};
   addEventListener('keydown', e => tasten[e.code] = true);
   addEventListener('keyup', e => tasten[e.code] = false);
   addEventListener('blur', () => { for (const k in tasten) tasten[k] = false; });
 
-  // ---------- Steuerung am Handy ----------
-  // Linke Hälfte: Stick zum Laufen. Rechte Hälfte: wischen = umsehen (auch hoch/runter).
+  // Handy: links Stick zum Laufen, rechts wischen zum Schwenken
   const stickBasis = document.getElementById('stickBasis');
   const stickKnopf = document.getElementById('stickKnopf');
-  let stickId = null, stickX = 0, stickY = 0;
-  let stickVecX = 0, stickVecY = 0;
+  let stickId = null, stickX = 0, stickY = 0, stickVecX = 0, stickVecY = 0;
   let blickId = null, blickX = 0, blickY = 0;
-  let yaw = 0, neigung = 0;
-
-  function setzePos(el, x, y) { el.style.left = x + 'px'; el.style.top = y + 'px'; }
+  let yaw = 0, neigung = 0, yv = 0;
+  const setzePos = (el, x, y) => { el.style.left = x + 'px'; el.style.top = y + 'px'; };
+  const imStart = e => e.target.closest && e.target.closest('#start');
 
   addEventListener('touchstart', e => {
+    if (imStart(e)) return;
     e.preventDefault();
     for (const t of e.changedTouches) {
       if (t.clientX < innerWidth / 2 && stickId === null) {
@@ -163,6 +189,7 @@
   }, { passive: false });
 
   addEventListener('touchmove', e => {
+    if (imStart(e)) return;
     e.preventDefault();
     for (const t of e.changedTouches) {
       if (t.identifier === stickId) {
@@ -194,63 +221,86 @@
   addEventListener('touchcancel', touchEnde);
 
   // ---------- Hauptschleife ----------
+  let hx = 0, hz = -1;   // Laufrichtung des Fuchses (Start: von der Kamera weg)
   let letzte = performance.now();
   function schleife(jetzt) {
     const dt = Math.min((jetzt - letzte) / 1000, 0.05);
     letzte = jetzt;
 
-    // Drehen mit Q/E (oder Pfeil links/rechts), hoch/runter schauen mit R/F
+    // Kamera um den Fuchs schwenken
     yaw += ((tasten.KeyQ || tasten.ArrowLeft ? 1 : 0) - (tasten.KeyE || tasten.ArrowRight ? 1 : 0)) * DREHTEMPO * dt;
     neigung += ((tasten.KeyR ? 1 : 0) - (tasten.KeyF ? 1 : 0)) * DREHTEMPO * dt;
     neigung = Math.max(-MAX_NEIGUNG, Math.min(MAX_NEIGUNG, neigung));
 
-    // Laufen: vor/zurück und seitlich, Tasten und Stick zusammen
+    // Laufen: W = von der Kamera weg, S = auf die Kamera zu, A/D = seitlich
     let vor = (tasten.KeyW || tasten.ArrowUp ? 1 : 0) - (tasten.KeyS || tasten.ArrowDown ? 1 : 0) - stickVecY;
     let seit = (tasten.KeyD ? 1 : 0) - (tasten.KeyA ? 1 : 0) + stickVecX;
     const laenge = Math.hypot(vor, seit);
     if (laenge > 1) { vor /= laenge; seit /= laenge; }
-    const s = Math.sin(yaw), c = Math.cos(yaw);
-    cam.position.x += (-s * vor + c * seit) * TEMPO * dt;
-    cam.position.z += (-c * vor - s * seit) * TEMPO * dt;
+    const fvx = -Math.sin(yv), fvz = -Math.cos(yv);   // Blickrichtung der Kamera
+    const rvx = Math.cos(yv),  rvz = -Math.sin(yv);   // rechts
+    const mx = fvx * vor + rvx * seit, mz = fvz * vor + rvz * seit;
+    fuchs.x += mx * TEMPO * dt;
+    fuchs.z += mz * TEMPO * dt;
+    const ml = Math.hypot(mx, mz);
+    if (ml > 0.1) { hx = mx / ml; hz = mz / ml; }
 
-    // Raumgrenzen
-    const grenze = RAUM - 0.5;
-    cam.position.x = Math.max(-grenze, Math.min(grenze, cam.position.x));
-    cam.position.z = Math.max(-grenze, Math.min(grenze, cam.position.z));
-
-    // Objekte: Abstand halten, zur Kamera drehen, Ansicht und Mundzustand wählen
+    // andere Objekte: Bahn und Mund
     for (const o of OBJEKTE) {
-      let dx = cam.position.x - o.x;
-      let dz = cam.position.z - o.z;
-      const abstand = Math.hypot(dx, dz);
-      if (abstand < o.radius) {
-        cam.position.x = o.x + (dx / abstand) * o.radius;
-        cam.position.z = o.z + (dz / abstand) * o.radius;
-        dx = cam.position.x - o.x;
-        dz = cam.position.z - o.z;
+      if (o.steuerbar) continue;
+      if (o.bahn) {
+        const b = o.bahn;
+        o.winkel += b.richtung * (Math.PI * 2 / b.umlauf) * dt;
+        o.x = b.mx + b.radius * Math.cos(o.winkel);
+        o.z = b.mz + b.radius * Math.sin(o.winkel);
+        o.kurs = Math.atan2(-b.richtung * Math.sin(o.winkel), b.richtung * Math.cos(o.winkel));
       }
-
-      // Mund wechselt zufällig alle MUND_MIN bis MUND_MAX Sekunden,
-      // für alle Blickrichtungen gleichzeitig
       if (o.mund) {
-        o.timer -= dt;
-        if (o.timer <= 0) {
-          o.offen = !o.offen;
-          o.timer = MUND_MIN + Math.random() * (MUND_MAX - MUND_MIN);
-        }
+        if (o.singt) {
+          o.timer -= dt;
+          if (o.timer <= 0) { o.offen = !o.offen; o.timer = MUND_MIN + Math.random() * (MUND_MAX - MUND_MIN); }
+        } else o.offen = false;
       }
+      // Fuchs nicht durch andere Objekte laufen lassen
+      const dx = fuchs.x - o.x, dz = fuchs.z - o.z, d = Math.hypot(dx, dz), mind = fuchs.radius + o.radius;
+      if (d < mind && d > 0) { fuchs.x = o.x + dx / d * mind; fuchs.z = o.z + dz / d * mind; }
+    }
+    const g = RAUM - 0.8;
+    fuchs.x = Math.max(-g, Math.min(g, fuchs.x));
+    fuchs.z = Math.max(-g, Math.min(g, fuchs.z));
 
-      const a = Math.atan2(dx, dz);
-      o.mesh.rotation.y = a;
-      const n = o.ansichten.length;
-      let index = Math.round((a / (Math.PI * 2)) * n);
-      index = ((index % n) + n) % n;
-      const paar = o.texturen[index];
+    // Kamera hinter dem Fuchs
+    const e = Math.max(0.03, START_ELEV - neigung);
+    const hor = CAM_ABSTAND * Math.cos(e);
+    const gc = RAUM - 0.3;
+    const cx = Math.max(-gc, Math.min(gc, fuchs.x + Math.sin(yaw) * hor));
+    const cz = Math.max(-gc, Math.min(gc, fuchs.z + Math.cos(yaw) * hor));
+    const cy = Math.min(ZIEL_Y + CAM_ABSTAND * Math.sin(e), RAUMHOEHE - 0.3);
+    cam.position.set(cx, cy, cz);
+    cam.lookAt(fuchs.x, ZIEL_Y, fuchs.z);
+    yv = Math.atan2(-(fuchs.x - cx), -(fuchs.z - cz));
+
+    // Bilder: immer plan zur Blickrichtung, passende Ansicht wählen
+    const fx = -Math.sin(yv), fz = -Math.cos(yv), rx = Math.cos(yv), rz = -Math.sin(yv);
+    for (const o of OBJEKTE) {
+      o.mesh.position.set(o.x, o.hoehe / 2, o.z);
+      o.mesh.rotation.y = yv;
+      let paar;
+      if (o.steuerbar) {
+        // Laufrichtung relativ zur Kamera: 0 = weg von dir, 90° = nach rechts, 180° = auf dich zu
+        const phi = Math.atan2(hx * rx + hz * rz, hx * fx + hz * fz);
+        const w = Math.abs(phi);
+        const index = w < 1.178 ? 2 : (w > 1.963 ? 0 : (phi > 0 ? 3 : 1));
+        paar = o.texturen[index];
+      } else {
+        const a = Math.atan2(cx - o.x, cz - o.z) - o.kurs;
+        const n = o.ansichten.length;
+        let index = Math.round((a / (Math.PI * 2)) * n);
+        index = ((index % n) + n) % n;
+        paar = o.texturen[index];
+      }
       o.mesh.material.map = (o.offen && paar[1]) ? paar[1] : paar[0];
     }
-
-    cam.rotation.y = yaw;
-    cam.rotation.x = neigung;
 
     renderer.render(scene, cam);
     requestAnimationFrame(schleife);
